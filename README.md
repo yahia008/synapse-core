@@ -2,7 +2,7 @@
 
 Synapse Core is the first component of the Synapse Bridge project. It acts as a **callback processor** for the Stellar Anchor Platform, handling fiat-to-Stellar deposit events. When a user deposits fiat currency (e.g., USD) via an anchor, this service receives a webhook, stores the transaction, and prepares it for the next phases (swap and cross-chain bridging).
 
-This repository is part of the larger Synapse Bridge ecosystem. It is designed to be run alongside the Stellar Anchor Platform (a separate Java‑based service) and a PostgreSQL database.
+This repository is part of the larger Synapse Bridge ecosystem. It is designed to be run alongside the Stellar Anchor Platform and a PostgreSQL database.
 
 ## 🧱 Project Structure
 
@@ -45,15 +45,20 @@ cp .env.example .env
 ```
 
 The required variables are:
-DATABASE_URL – PostgreSQL connection string (e.g., postgres://synapse:synapse@localhost:5432/synapse)
+
+```
+DATABASE_URL – PostgresSQL connection string (e.g., postgres://synapse:synapse@localhost:5432/synapse)
 SERVER_PORT – Port for the web server (default 3000)
 STELLAR_HORIZON_URL – Stellar Horizon endpoint (e.g., https://horizon-testnet.stellar.org)
-Start PostgreSQL 3. Using Docker (recommended for development):
+```
+
+3. Start PostgresSQL Using Docker (recommended for development):
 
 ```bash
 Docker run --name synapse-postgres -e POSTGRES_USER=synapse -e POSTGRES_PASSWORD=synapse -e POSTGRES_DB=synapse -p 5432:5432 -d postgres:14-alpine
-Or install PostgreSQL natively and create a database named synapse.
 ```
+
+Or install PostgreSQL natively and create a database named synapse.
 
 4. Run database migrations
    The app will automatically run migrations on startup, but you can also run them manually with sqlx:

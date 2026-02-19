@@ -4,7 +4,7 @@ mod error;
 mod handlers;
 mod stellar;
 
-use axum::{Router, extract::State, routing::get};
+use axum::{Router, extract::State, routing::{get, post}};
 use sqlx::migrate::Migrator; // for Migrator
 use std::net::SocketAddr; // for SocketAddr
 use std::path::Path; // for Path
@@ -17,6 +17,7 @@ use stellar::HorizonClient;
 pub struct AppState {
     db: sqlx::PgPool,
     pub horizon_client: HorizonClient,
+    pub config: config::Config,
 }
 
 #[tokio::main]
@@ -47,9 +48,11 @@ async fn main() -> anyhow::Result<()> {
     let app_state = AppState { 
         db: pool,
         horizon_client,
+        config: config.clone(),
     };
     let app = Router::new()
         .route("/health", get(handlers::health))
+        .route("/callback/transaction", post(handlers::webhook::transaction_callback))
         .with_state(app_state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.server_port));

@@ -3,8 +3,11 @@ mod db;
 mod error;
 mod handlers;
 mod stellar;
+mod metrics;
+mod services;
 
-use axum::{Router, extract::State, routing::get};
+use axum::{Router, extract::State, routing::get, middleware};
+use metrics_exporter_prometheus::PrometheusHandle;
 use sqlx::migrate::Migrator; // for Migrator
 use std::net::SocketAddr; // for SocketAddr
 use std::path::Path; // for Path
@@ -17,6 +20,7 @@ use stellar::HorizonClient;
 pub struct AppState {
     db: sqlx::PgPool,
     pub horizon_client: HorizonClient,
+    pub metrics_handle: PrometheusHandle,
 }
 
 #[tokio::main]
@@ -43,13 +47,49 @@ async fn main() -> anyhow::Result<()> {
     let horizon_client = HorizonClient::new(config.stellar_horizon_url.clone());
     tracing::info!("Stellar Horizon client initialized with URL: {}", config.stellar_horizon_url);
 
+    // Initialize metrics
+    let metrics_handle = metrics::init_metrics()
+        .map_err(|e| anyhow::anyhow!("Failed to initialize metrics: {}", e))?;
+    tracing::info!("Metrics initialized successfully");
+
     // Build router with state
     let app_state = AppState { 
-        db: pool,
+        db: pool.clone(),
         horizon_client,
+        metrics_handle: metrics_handle.clone(),
     };
+    
+    // Create a state tuple for the metrics endpoint (needs both handle and pool)
+    #[derive(Clone)]
+    struct MetricsState {
+        handle: PrometheusHandle,
+        pool: sqlx::PgPool,
+    }
+    
+    let metrics_state = MetricsState {
+        handle: metrics_handle.clone(),
+        pool: pool.clone(),
+    };
+    
+    // Create metrics route with authentication middleware
+    let metrics_route = Router::new()
+        .route("/metrics", get(|
+            axum::extract::State(state): axum::extract::State<MetricsState>
+        | async move {
+            metrics::metrics_handler(
+                axum::extract::State(state.handle),
+                axum::extract::State(state.pool),
+            ).await
+        }))
+        .layer(middleware::from_fn_with_state(
+            config.clone(),
+            metrics::metrics_auth_middleware,
+        ))
+        .with_state(metrics_state);
+    
     let app = Router::new()
         .route("/health", get(handlers::health))
+        .merge(metrics_route)
         .with_state(app_state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.server_port));

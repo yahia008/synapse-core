@@ -39,6 +39,11 @@ async fn main() -> anyhow::Result<()> {
     migrator.run(&pool).await?;
     tracing::info!("Database migrations completed");
 
+    // Initialize partition manager (runs every 24 hours)
+    let partition_manager = db::partition::PartitionManager::new(pool.clone(), 24);
+    partition_manager.start();
+    tracing::info!("Partition manager started");
+
     // Initialize Stellar Horizon client
     let horizon_client = HorizonClient::new(config.stellar_horizon_url.clone());
     tracing::info!("Stellar Horizon client initialized with URL: {}", config.stellar_horizon_url);

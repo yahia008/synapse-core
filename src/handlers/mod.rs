@@ -1,4 +1,3 @@
-use crate::AppState;
 use axum::{
     extract::State,
     http::StatusCode,
@@ -9,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod settlements;
 pub mod webhook;
+pub mod graphql;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HealthStatus {
@@ -17,9 +17,11 @@ pub struct HealthStatus {
     db: String,
 }
 
-pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
+use crate::ApiState;
+
+pub async fn health(State(state): State<ApiState>) -> impl IntoResponse {
     // Check database connectivity with SELECT 1 query
-    let db_status = match sqlx::query("SELECT 1").execute(&state.db).await {
+    let db_status = match sqlx::query("SELECT 1").execute(&state.app_state.db).await {
         Ok(_) => "connected",
         Err(_) => "disconnected",
     };

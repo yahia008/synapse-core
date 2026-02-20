@@ -5,7 +5,6 @@ use axum::{
     Json,
 };
 use uuid::Uuid;
-use crate::AppState;
 use crate::db::{models::Transaction, queries};
 use crate::error::AppError;
 use serde::{Deserialize, Serialize};
@@ -20,8 +19,10 @@ pub struct CallbackPayload {
     pub callback_status: Option<String>,
 }
 
+use crate::ApiState;
+
 pub async fn callback(
-    State(state): State<AppState>,
+    State(state): State<ApiState>,
     headers: HeaderMap,
     Json(payload): Json<CallbackPayload>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -42,17 +43,17 @@ pub async fn callback(
         payload.callback_status,
     );
 
-    let inserted = queries::insert_transaction(&state.db, &tx).await
+    let inserted = queries::insert_transaction(&state.app_state.db, &tx).await
         .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
     Ok((StatusCode::CREATED, Json(inserted)))
 }
 
 pub async fn get_transaction(
-    State(state): State<AppState>,
+    State(state): State<ApiState>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let tx = queries::get_transaction(&state.db, id).await
+    let tx = queries::get_transaction(&state.app_state.db, id).await
         .map_err(|e| match e {
             sqlx::Error::RowNotFound => AppError::NotFound(format!("Transaction {} not found", id)),
             _ => AppError::DatabaseError(e.to_string()),

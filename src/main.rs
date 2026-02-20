@@ -91,6 +91,11 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
+    // Initialize metrics
+    let metrics_handle = metrics::init_metrics()
+        .map_err(|e| anyhow::anyhow!("Failed to initialize metrics: {}", e))?;
+    tracing::info!("Metrics initialized successfully");
+
     // Build router with state
     let app_state = AppState {
         db: pool,
@@ -98,6 +103,23 @@ async fn main() -> anyhow::Result<()> {
         horizon_client,
         feature_flags,
     };
+    
+    // Create metrics route with authentication middleware
+    let metrics_route = Router::new()
+        .route("/metrics", get(|
+            axum::extract::State(state): axum::extract::State<MetricsState>
+        | async move {
+            metrics::metrics_handler(
+                axum::extract::State(state.handle),
+                axum::extract::State(state.pool),
+            ).await
+        }))
+        .layer(middleware::from_fn_with_state(
+            config.clone(),
+            metrics::metrics_auth_middleware,
+        ))
+        .with_state(metrics_state);
+    
     let app = Router::new()
         .route("/health", get(handlers::health))
         .route("/settlements", get(handlers::settlements::list_settlements))

@@ -7,7 +7,6 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-pub mod settlements;
 pub mod webhook;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -42,4 +41,8 @@ pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
     };
 
     (status_code, Json(health_response))
+}
+
+pub async fn callback_transaction(State(_state): State<AppState>) -> impl IntoResponse {
+    StatusCode::NOT_IMPLEMENTED
 }

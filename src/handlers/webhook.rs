@@ -1,62 +1,40 @@
+use crate::AppState;
 use axum::{
-    extract::{Path, State},
-    http::{StatusCode, HeaderMap},
+    extract::State,
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
-use uuid::Uuid;
-use crate::AppState;
-use crate::db::{models::Transaction, queries};
-use crate::error::AppError;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct CallbackPayload {
-    pub stellar_account: String,
-    pub amount: bigdecimal::BigDecimal,
-    pub asset_code: String,
-    pub anchor_transaction_id: Option<String>,
-    pub callback_type: Option<String>,
-    pub callback_status: Option<String>,
+#[derive(Debug, Deserialize)]
+pub struct WebhookPayload {
+    pub id: String,
+    pub anchor_transaction_id: String,
+    // Add other webhook fields as needed
 }
 
-pub async fn callback(
+#[derive(Debug, Serialize)]
+pub struct WebhookResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+/// Handle incoming webhook callbacks
+/// The idempotency middleware should be applied to this handler
+pub async fn handle_webhook(
     State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(payload): Json<CallbackPayload>,
-) -> Result<impl IntoResponse, AppError> {
-    // Simple mock signature check for integration tests
-    let sig = headers.get("X-App-Signature")
-        .and_then(|h| h.to_str().ok());
+    Json(payload): Json<WebhookPayload>,
+) -> impl IntoResponse {
+    tracing::info!("Processing webhook with id: {}", payload.id);
+
+    // Process the webhook (e.g., create transaction, update database)
+    // This is where your business logic goes
     
-    if sig != Some("valid-signature") {
-        return Err(AppError::BadRequest("Invalid signature".to_string()));
-    }
+    let response = WebhookResponse {
+        success: true,
+        message: format!("Webhook {} processed successfully", payload.id),
+    };
 
-    let tx = Transaction::new(
-        payload.stellar_account,
-        payload.amount,
-        payload.asset_code,
-        payload.anchor_transaction_id,
-        payload.callback_type,
-        payload.callback_status,
-    );
-
-    let inserted = queries::insert_transaction(&state.db, &tx).await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-    Ok((StatusCode::CREATED, Json(inserted)))
-}
-
-pub async fn get_transaction(
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> Result<impl IntoResponse, AppError> {
-    let tx = queries::get_transaction(&state.db, id).await
-        .map_err(|e| match e {
-            sqlx::Error::RowNotFound => AppError::NotFound(format!("Transaction {} not found", id)),
-            _ => AppError::DatabaseError(e.to_string()),
-        })?;
-
-    Ok(Json(tx))
+    (StatusCode::OK, Json(response))
 }

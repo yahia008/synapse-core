@@ -1,161 +1,248 @@
-use crate::db::models::Transaction;
-use crate::error::AppError;
 use crate::AppState;
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    Json,
+use crate::db::{models::Transaction, queries};
+use crate::error::AppError;
+use crate::validation::{
+    AMOUNT_INPUT_MAX_LEN, ANCHOR_TRANSACTION_ID_MAX_LEN, CALLBACK_STATUS_MAX_LEN,
+    CALLBACK_TYPE_MAX_LEN, sanitize_string, validate_asset_code, validate_max_len,
+    validate_positive_amount, validate_stellar_address,
 };
+use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use sqlx::types::BigDecimal;
-use std::str::FromStr;
-use uuid::Uuid;
 
-/// Payload received from Stellar Anchor Platform webhook
 #[derive(Debug, Deserialize)]
-pub struct CallbackPayload {
-    pub id: String,
-    pub amount_in: String,
-    pub stellar_account: String,
+#[serde(deny_unknown_fields)]
+pub struct WebhookTransactionRequest {
+    pub stellar_address: String,
+    pub amount: String,
     pub asset_code: String,
-    #[serde(default)]
+    pub anchor_transaction_id: Option<String>,
     pub callback_type: Option<String>,
-    #[serde(default)]
-    pub status: Option<String>,
+    pub callback_status: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct CallbackResponse {
-    pub transaction_id: Uuid,
+pub struct WebhookTransactionResponse {
+    pub id: String,
     pub status: String,
 }
 
-/// Validate the callback payload according to business rules
-fn validate_payload(payload: &CallbackPayload) -> Result<(), AppError> {
-    // Validate amount > 0
-    let amount = BigDecimal::from_str(&payload.amount_in)
-        .map_err(|_| AppError::Validation("Invalid amount format".to_string()))?;
-    
-    if amount <= BigDecimal::from(0) {
-        return Err(AppError::Validation("Amount must be greater than 0".to_string()));
-    }
-
-    // Validate Stellar account address length (should be 56 characters for a valid public key)
-    if payload.stellar_account.len() != 56 {
-        return Err(AppError::Validation(
-            "Invalid Stellar account address length (must be 56 characters)".to_string(),
-        ));
-    }
-
-    // Validate Stellar account starts with 'G' (public key prefix)
-    if !payload.stellar_account.starts_with('G') {
-        return Err(AppError::Validation(
-            "Stellar account must start with 'G'".to_string(),
-        ));
-    }
-
-    // Validate asset code length (max 12 characters per Stellar spec)
-    if payload.asset_code.is_empty() || payload.asset_code.len() > 12 {
-        return Err(AppError::Validation(
-            "Asset code must be between 1 and 12 characters".to_string(),
-        ));
-    }
-
-    Ok(())
+struct ValidatedWebhookTransaction {
+    stellar_address: String,
+    amount: BigDecimal,
+    asset_code: String,
+    anchor_transaction_id: Option<String>,
+    callback_type: Option<String>,
+    callback_status: Option<String>,
 }
 
-/// Handle POST /callback/transaction endpoint
-/// Receives fiat deposit events from Stellar Anchor Platform
-pub async fn handle_callback(
-    State(state): State<AppState>,
-    Json(payload): Json<CallbackPayload>,
-) -> Result<impl IntoResponse, AppError> {
-    tracing::info!(
-        "Received callback for transaction {} with amount {} {}",
-        payload.id,
-        payload.amount_in,
-        payload.asset_code
-    );
+fn sanitize_optional(value: Option<String>) -> Option<String> {
+    value
+        .map(|v| sanitize_string(&v))
+        .and_then(|v| if v.is_empty() { None } else { Some(v) })
+}
 
-    // Validate payload
-    validate_payload(&payload)?;
+fn validate_webhook_payload(
+    payload: WebhookTransactionRequest,
+) -> Result<ValidatedWebhookTransaction, AppError> {
+    let stellar_address = sanitize_string(&payload.stellar_address);
+    let asset_code = sanitize_string(&payload.asset_code);
+    let amount_str = sanitize_string(&payload.amount);
+    let anchor_transaction_id = sanitize_optional(payload.anchor_transaction_id);
+    let callback_type = sanitize_optional(payload.callback_type);
+    let callback_status = sanitize_optional(payload.callback_status);
 
-    // Parse amount
-    let amount = BigDecimal::from_str(&payload.amount_in)
-        .map_err(|_| AppError::Validation("Invalid amount format".to_string()))?;
+    validate_stellar_address(&stellar_address)
+        .map_err(|err| AppError::Validation(err.to_string()))?;
+    validate_asset_code(&asset_code).map_err(|err| AppError::Validation(err.to_string()))?;
+    validate_max_len("amount", &amount_str, AMOUNT_INPUT_MAX_LEN)
+        .map_err(|err| AppError::Validation(err.to_string()))?;
+    if let Some(anchor_transaction_id) = &anchor_transaction_id {
+        validate_max_len(
+            "anchor_transaction_id",
+            anchor_transaction_id,
+            ANCHOR_TRANSACTION_ID_MAX_LEN,
+        )
+        .map_err(|err| AppError::Validation(err.to_string()))?;
+    }
+    if let Some(callback_type) = &callback_type {
+        validate_max_len("callback_type", callback_type, CALLBACK_TYPE_MAX_LEN)
+            .map_err(|err| AppError::Validation(err.to_string()))?;
+    }
+    if let Some(callback_status) = &callback_status {
+        validate_max_len("callback_status", callback_status, CALLBACK_STATUS_MAX_LEN)
+            .map_err(|err| AppError::Validation(err.to_string()))?;
+    }
 
-    // Create transaction model
-    let transaction = Transaction::new(
-        payload.stellar_account.clone(),
+    let amount = amount_str
+        .parse::<BigDecimal>()
+        .map_err(|_| AppError::Validation("amount: must be a valid decimal".to_string()))?;
+    validate_positive_amount(&amount).map_err(|err| AppError::Validation(err.to_string()))?;
+
+    Ok(ValidatedWebhookTransaction {
+        stellar_address,
         amount,
-        payload.asset_code.clone(),
-        Some(payload.id.clone()),
-        payload.callback_type.clone(),
-        payload.status.clone(),
-    );
-
-    // Insert into database
-    let result = sqlx::query!(
-        r#"
-        INSERT INTO transactions (
-            id, stellar_account, amount, asset_code, status,
-            created_at, updated_at, anchor_transaction_id, callback_type, callback_status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        RETURNING id
-        "#,
-        transaction.id,
-        transaction.stellar_account,
-        transaction.amount,
-        transaction.asset_code,
-        transaction.status,
-        transaction.created_at,
-        transaction.updated_at,
-        transaction.anchor_transaction_id,
-        transaction.callback_type,
-        transaction.callback_status,
-    )
-    .fetch_one(&state.db)
-    .await
-    .map_err(AppError::Database)?;
-
-    tracing::info!(
-        "Transaction {} persisted with status: pending",
-        result.id
-    );
-
-    let response = CallbackResponse {
-        transaction_id: result.id,
-        status: "pending".to_string(),
-    };
-
-    Ok((StatusCode::CREATED, Json(response)))
+        asset_code,
+        anchor_transaction_id,
+        callback_type,
+        callback_status,
+    })
 }
 
-/// Legacy webhook handler - kept for backward compatibility
-/// The idempotency middleware should be applied to this handler
-#[derive(Debug, Deserialize)]
-pub struct WebhookPayload {
-    pub id: String,
-    pub anchor_transaction_id: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct WebhookResponse {
-    pub success: bool,
-    pub message: String,
-}
-
-pub async fn handle_webhook(
+pub async fn transaction_callback(
     State(state): State<AppState>,
-    Json(payload): Json<WebhookPayload>,
-) -> impl IntoResponse {
-    tracing::info!("Processing webhook with id: {}", payload.id);
-    
-    let response = WebhookResponse {
-        success: true,
-        message: format!("Webhook {} processed successfully", payload.id),
-    };
+    Json(payload): Json<WebhookTransactionRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // Validate and sanitize all inputs before any DB interaction.
+    let payload = validate_webhook_payload(payload)?;
 
-    (StatusCode::OK, Json(response))
+    let tx = Transaction::new(
+        payload.stellar_address,
+        payload.amount,
+        payload.asset_code,
+        payload.anchor_transaction_id,
+        payload.callback_type,
+        payload.callback_status,
+    );
+
+    let inserted = queries::insert_transaction(&state.db, &tx).await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(WebhookTransactionResponse {
+            id: inserted.id.to_string(),
+            status: inserted.status,
+        }),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn valid_payload() -> WebhookTransactionRequest {
+        WebhookTransactionRequest {
+            stellar_address: "G".to_owned() + &"A".repeat(55),
+            amount: "42.50".to_string(),
+            asset_code: "USD".to_string(),
+            anchor_transaction_id: Some("anchor-1".to_string()),
+            callback_type: Some("deposit".to_string()),
+            callback_status: Some("completed".to_string()),
+        }
+    }
+
+    #[test]
+    fn webhook_payload_rejects_unknown_fields() {
+        let raw = r#"{
+            "stellar_address":"GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "amount":"10",
+            "asset_code":"USD",
+            "unknown":"x"
+        }"#;
+
+        let parsed = serde_json::from_str::<WebhookTransactionRequest>(raw);
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn validate_webhook_payload_accepts_valid_input() {
+        let parsed = validate_webhook_payload(valid_payload());
+        assert!(parsed.is_ok());
+    }
+
+    #[test]
+    fn validate_webhook_payload_rejects_invalid_stellar_address() {
+        let mut payload = valid_payload();
+        payload.stellar_address = "BAD".to_string();
+
+        let parsed = validate_webhook_payload(payload);
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn validate_webhook_payload_rejects_invalid_asset_code() {
+        let mut payload = valid_payload();
+        payload.asset_code = "usd".to_string();
+
+        let parsed = validate_webhook_payload(payload);
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn validate_webhook_payload_rejects_invalid_amount() {
+        let mut payload = valid_payload();
+        payload.amount = "-1".to_string();
+
+        let parsed = validate_webhook_payload(payload);
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn validate_webhook_payload_rejects_empty_required_fields() {
+        let mut payload = valid_payload();
+        payload.stellar_address = "   ".to_string();
+        payload.amount = "   ".to_string();
+        payload.asset_code = "   ".to_string();
+
+        let parsed = validate_webhook_payload(payload);
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn validate_webhook_payload_rejects_unicode_in_validated_fields() {
+        let mut payload = valid_payload();
+        payload.stellar_address = format!("G{}", "Ä".repeat(55));
+
+        let parsed = validate_webhook_payload(payload);
+        assert!(parsed.is_err());
+
+        let mut payload = valid_payload();
+        payload.asset_code = "USÐ".to_string();
+
+        let parsed = validate_webhook_payload(payload);
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn validate_webhook_payload_rejects_sql_injection_like_strings() {
+        let mut payload = valid_payload();
+        payload.asset_code = "USD'; DROP TABLE transactions; --".to_string();
+
+        let parsed = validate_webhook_payload(payload);
+        assert!(parsed.is_err());
+
+        let mut payload = valid_payload();
+        payload.amount = "1; DROP TABLE transactions; --".to_string();
+
+        let parsed = validate_webhook_payload(payload);
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn validate_webhook_payload_sanitizes_control_characters_in_optional_fields() {
+        let mut payload = valid_payload();
+        payload.anchor_transaction_id = Some("abc\u{0000}123\u{0007}".to_string());
+        payload.callback_type = Some("dep\u{0001}osit".to_string());
+        payload.callback_status = Some("comple\u{0002}ted".to_string());
+
+        let parsed = validate_webhook_payload(payload).expect("payload should be valid");
+        assert_eq!(parsed.anchor_transaction_id.as_deref(), Some("abc123"));
+        assert_eq!(parsed.callback_type.as_deref(), Some("deposit"));
+        assert_eq!(parsed.callback_status.as_deref(), Some("completed"));
+    }
+
+    #[test]
+    fn validate_webhook_payload_rejects_overlong_optional_fields() {
+        let mut payload = valid_payload();
+        payload.anchor_transaction_id = Some("a".repeat(256));
+        assert!(validate_webhook_payload(payload).is_err());
+
+        let mut payload = valid_payload();
+        payload.callback_type = Some("a".repeat(21));
+        assert!(validate_webhook_payload(payload).is_err());
+
+        let mut payload = valid_payload();
+        payload.callback_status = Some("a".repeat(21));
+        assert!(validate_webhook_payload(payload).is_err());
+    }
 }

@@ -1,3 +1,26 @@
+
+pub async fn insert_transaction(pool: &PgPool, tx: &Transaction) -> Result<Transaction> {
+    sqlx::query_as!(
+        Transaction,
+        r#"
+        INSERT INTO transactions (
+            id, stellar_account, amount, asset_code, status,
+            created_at, updated_at, anchor_transaction_id, callback_type, callback_status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING id, stellar_account, amount, asset_code, status,
+                  created_at, updated_at, anchor_transaction_id, callback_type, callback_status
+        "#,
+        tx.id,
+        tx.stellar_account,
+        tx.amount,
+        tx.asset_code,
+        tx.status,
+        tx.created_at,
+        tx.updated_at,
+        tx.anchor_transaction_id,
+        tx.callback_type,
+        tx.callback_status
+
 use sqlx::{PgPool, Result, Postgres, Transaction as SqlxTransaction};
 use crate::db::models::{Transaction, Settlement};
 use crate::db::audit::{AuditLog, ENTITY_TRANSACTION, ENTITY_SETTLEMENT};
@@ -30,29 +53,21 @@ pub async fn insert_transaction(pool: &PgPool, tx: &Transaction) -> Result<Trans
     .bind(&tx.callback_type)
     .bind(&tx.callback_status)
     .bind(tx.settlement_id)
-    .fetch_one(&mut *transaction)
+    .fetch_one(pool)
     .await?;
 
-    // Audit log: transaction created
-    AuditLog::log_creation(
-        &mut transaction,
-        result.id,
-        ENTITY_TRANSACTION,
-        json!({
-            "stellar_account": result.stellar_account,
-            "amount": result.amount.to_string(),
-            "asset_code": result.asset_code,
-            "status": result.status,
-            "anchor_transaction_id": result.anchor_transaction_id,
-            "callback_type": result.callback_type,
-            "callback_status": result.callback_status,
-        }),
-        "system",
-    )
-    .await?;
-
-    transaction.commit().await?;
-    Ok(result)
+    Ok(Transaction {
+        id: row.get("id"),
+        stellar_account: row.get("stellar_account"),
+        amount: row.get("amount"),
+        asset_code: row.get("asset_code"),
+        status: row.get("status"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+        anchor_transaction_id: row.get("anchor_transaction_id"),
+        callback_type: row.get("callback_type"),
+        callback_status: row.get("callback_status"),
+    })
 }
 
 pub async fn get_transaction(pool: &PgPool, id: Uuid) -> Result<Transaction> {
@@ -145,26 +160,12 @@ pub async fn insert_settlement(
     .bind(settlement.created_at)
     .bind(settlement.updated_at)
     .fetch_one(&mut **executor)
-    .await?;
+    .await
 
-    // Audit log: settlement created
-    AuditLog::log_creation(
-        executor,
-        result.id,
-        ENTITY_SETTLEMENT,
-        json!({
-            "asset_code": result.asset_code,
-            "total_amount": result.total_amount.to_string(),
-            "tx_count": result.tx_count,
-            "period_start": result.period_start.to_rfc3339(),
-            "period_end": result.period_end.to_rfc3339(),
-            "status": result.status,
-        }),
-        "system",
-    )
-    .await?;
-
-    Ok(result)
+pub async fn get_transaction(pool: &PgPool, id: i32) -> Result<Transaction> {
+    sqlx::query_as!(Transaction, "SELECT * FROM transactions WHERE id = $1", id)
+        .fetch_one(pool)
+        .await
 }
 
 pub async fn get_settlement(pool: &PgPool, id: Uuid) -> Result<Settlement> {
@@ -193,29 +194,4 @@ pub async fn get_unique_assets_to_settle(pool: &PgPool) -> Result<Vec<String>> {
         use sqlx::Row;
         r.get:: <String, _>("asset_code")
     }).collect())
-}
-
-// --- Audit Log Queries ---
-
-pub async fn get_audit_logs(
-    pool: &PgPool,
-    entity_id: Uuid,
-    limit: i64,
-    offset: i64,
-) -> Result<Vec<(Uuid, String, String, String, Option<String>, Option<String>, String)>> {
-    sqlx::query_as::<_, (Uuid, String, String, String, Option<String>, Option<String>, String)>(
-        r#"
-        SELECT id, entity_id, entity_type, action, 
-               old_val::text, new_val::text, actor
-        FROM audit_logs
-        WHERE entity_id = $1
-        ORDER BY timestamp DESC
-        LIMIT $2 OFFSET $3
-        "#
-    )
-    .bind(entity_id)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(pool)
-    .await
 }

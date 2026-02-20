@@ -1,7 +1,7 @@
 [package]
 name = "synapse-core"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
@@ -26,16 +26,14 @@ uuid = { version = "1", features = ["v4", "serde"] }
 bigdecimal = { version = "0.3", features = ["serde"] }
 home = "=0.5.11"
 reqwest = { version = "0.11", features = ["json"] }
-redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
-ipnet = "2.9"
+failsafe = "1"
+bigdecimal = { version = "0.3", features = ["serde"] 
 
 [dev-dependencies]
+
 mockito = "1"
 sqlx = { version = "0.7", features = [
     "runtime-tokio-native-tls",
     "postgres",
     "migrate",
 ] }
-testcontainers = "0.23"
-testcontainers-modules = { version = "0.11", features = ["postgres"] }
-reqwest = { version = "0.11", features = ["json"] }

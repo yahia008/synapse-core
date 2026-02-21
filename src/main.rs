@@ -6,6 +6,7 @@ mod middleware;
 mod stellar;
 mod services;
 mod utils;
+mod startup;
 
 use axum::{Router, extract::State, routing::{get, post}, middleware as axum_middleware};
 use http::header::HeaderValue;
@@ -75,6 +76,10 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    // Check for --dry-run flag
+    let args: Vec<String> = std::env::args().collect();
+    let dry_run = args.contains(&"--dry-run".to_string());
+
     // Database pool
     let pool = db::create_pool(&config).await?;
 
@@ -82,6 +87,21 @@ async fn main() -> anyhow::Result<()> {
     let migrator = Migrator::new(Path::new("./migrations")).await?;
     migrator.run(&pool).await?;
     tracing::info!("Database migrations completed");
+
+    // Run startup validation
+    let report = startup::validate_environment(&config, &pool).await?;
+    
+    if dry_run {
+        report.print();
+        std::process::exit(if report.is_valid() { 0 } else { 1 });
+    }
+    
+    if !report.is_valid() {
+        report.print();
+        anyhow::bail!("Startup validation failed");
+    }
+    
+    tracing::info!("✅ All startup checks passed");
 
     // Initialize Stellar Horizon client
     let horizon_client = HorizonClient::new(config.stellar_horizon_url.clone());

@@ -5,6 +5,7 @@ mod handlers;
 mod middleware;
 mod stellar;
 mod services;
+mod schemas;
 
 use axum::{Router, extract::State, routing::{get, post}, middleware as axum_middleware};
 use sqlx::migrate::Migrator; // for Migrator
@@ -31,6 +32,7 @@ use utoipa_swagger_ui::SwaggerUi;
     components(
         schemas(
             handlers::HealthStatus,
+            handlers::DbPoolStats,
             handlers::settlements::Pagination,
             handlers::settlements::SettlementListResponse,
             handlers::webhook::WebhookPayload,
@@ -90,9 +92,15 @@ async fn main() -> anyhow::Result<()> {
 
     // Build router with state
     let app_state = AppState { 
-        db: pool,
+        db: pool.clone(),
         horizon_client,
     };
+    
+    // Start background pool monitoring task
+    let monitor_pool = pool.clone();
+    tokio::spawn(async move {
+        pool_monitor_task(monitor_pool).await;
+    });
     
     // Create webhook routes with idempotency middleware
     let webhook_routes = Router::new()
@@ -123,3 +131,36 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+
+/// Background task to monitor database connection pool usage
+async fn pool_monitor_task(pool: sqlx::PgPool) {
+    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
+    
+    loop {
+        interval.tick().await;
+        
+        let active = pool.size();
+        let idle = pool.num_idle();
+        let max = pool.options().get_max_connections();
+        let usage_percent = (active as f32 / max as f32) * 100.0;
+        
+        // Log warning if pool usage exceeds 80%
+        if usage_percent >= 80.0 {
+            tracing::warn!(
+                "Database connection pool usage high: {:.1}% ({}/{} connections active, {} idle)",
+                usage_percent,
+                active,
+                max,
+                idle
+            );
+        } else {
+            tracing::debug!(
+                "Database connection pool status: {:.1}% ({}/{} connections active, {} idle)",
+                usage_percent,
+                active,
+                max,
+                idle
+            );
+        }
+    }
+}

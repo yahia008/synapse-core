@@ -35,7 +35,7 @@ use governor::{Quota, RateLimiter};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use clap::Parser;
 
-use crate::cli::{Cli, Commands, TxCommands, DbCommands};
+use crate::cli::{Cli, Commands, TxCommands, DbCommands, BackupCommands};
 use crate::db::pool_manager::PoolManager;
 use crate::services::{SettlementService, feature_flags::FeatureFlagService};
 use crate::stellar::HorizonClient;
@@ -223,6 +223,16 @@ async fn main() -> anyhow::Result<()> {
         },
         Some(Commands::Db(db_cmd)) => match db_cmd {
             DbCommands::Migrate => cli::handle_db_migrate(&config).await,
+        },
+        Some(Commands::Backup(backup_cmd)) => match backup_cmd {
+            BackupCommands::Run { backup_type } => {
+                cli::handle_backup_run(&config, &backup_type).await
+            }
+            BackupCommands::List => cli::handle_backup_list(&config).await,
+            BackupCommands::Restore { filename } => {
+                cli::handle_backup_restore(&config, &filename).await
+            }
+            BackupCommands::Cleanup => cli::handle_backup_cleanup(&config).await,
         },
         Some(Commands::Config) => cli::handle_config_validate(&config),
     }

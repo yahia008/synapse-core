@@ -178,7 +178,7 @@ pub async fn insert_settlement(
     .bind(settlement.updated_at)
     .fetch_one(&mut **executor)
     .await?;
-    
+
     Ok(result)
 }
 

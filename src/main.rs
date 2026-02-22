@@ -5,6 +5,7 @@ mod handlers;
 mod middleware;
 mod stellar;
 mod services;
+mod utils;
 
 use axum::{Router, extract::State, routing::{get, post}, middleware as axum_middleware};
 use http::header::HeaderValue;

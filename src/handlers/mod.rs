@@ -32,6 +32,15 @@ pub struct DbPoolStats {
 
 use crate::ApiState;
 
+#[utoipa::path(
+    get,
+    path = "/health",
+    responses(
+        (status = 200, description = "Service is healthy", body = HealthStatus),
+        (status = 503, description = "Service is unhealthy", body = HealthStatus)
+    ),
+    tag = "Health"
+)]
 pub async fn health(State(state): State<ApiState>) -> impl IntoResponse {
     // Check database connectivity with SELECT 1 query
     let db_status = match sqlx::query("SELECT 1").execute(&state.app_state.db).await {
@@ -48,7 +57,7 @@ pub async fn health(State(state): State<ApiState>) -> impl IntoResponse {
 
     let pool_stats = DbPoolStats {
         active_connections,
-        idle_connections,
+        idle_connections: idle_connections as u32,
         max_connections,
         usage_percent,
     };

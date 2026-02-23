@@ -1,22 +1,41 @@
-use std::sync::Arc;
 use sqlx::PgPool;
-
-use crate::config::assets::AssetCache;
 
 #[derive(Clone)]
 pub struct TransactionProcessor {
     pool: PgPool,
-    assets: Arc<AssetCache>,
 }
 
 impl TransactionProcessor {
-    pub fn new(pool: PgPool, assets: Arc<AssetCache>) -> Self {
-        Self { pool, assets }
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
     }
 
-    // Placeholder: real processing will use `self.assets.get(code)` when handling transactions
-    pub async fn process_stub(&self) {
-        // stub for future processing
-        let _ = &self.pool; // keep unused warning away
+    pub async fn process_transaction(&self, tx_id: uuid::Uuid) -> anyhow::Result<()> {
+        sqlx::query("UPDATE transactions SET status = 'completed', updated_at = NOW() WHERE id = $1")
+            .bind(tx_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn requeue_dlq(&self, dlq_id: uuid::Uuid) -> anyhow::Result<()> {
+        let tx_id: uuid::Uuid = sqlx::query_scalar(
+            "SELECT transaction_id FROM transaction_dlq WHERE id = $1",
+        )
+        .bind(dlq_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        sqlx::query("UPDATE transactions SET status = 'pending', updated_at = NOW() WHERE id = $1")
+            .bind(tx_id)
+            .execute(&self.pool)
+            .await?;
+
+        sqlx::query("DELETE FROM transaction_dlq WHERE id = $1")
+            .bind(dlq_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
     }
 }

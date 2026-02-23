@@ -10,10 +10,11 @@ async fn test_callback_transaction_success() {
     // This test validates the callback endpoint logic
     // In a real environment, you would set up a test database
     
+    let valid_stellar_account = format!("G{}", "A".repeat(55));
     let payload = json!({
         "id": "anchor-tx-123",
         "amount_in": "100.50",
-        "stellar_account": "GABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDEFGHIJKLMNOP",
+        "stellar_account": valid_stellar_account,
         "asset_code": "USD",
         "callback_type": "deposit",
         "status": "completed"
@@ -42,10 +43,11 @@ async fn test_callback_transaction_success() {
 
 #[tokio::test]
 async fn test_callback_validation_invalid_amount() {
+    let valid_stellar_account = format!("G{}", "A".repeat(55));
     let payload = json!({
         "id": "anchor-tx-123",
         "amount_in": "-50.00",
-        "stellar_account": "GABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDEFGHIJKLMNOP",
+        "stellar_account": valid_stellar_account,
         "asset_code": "USD"
     });
 
@@ -68,10 +70,11 @@ async fn test_callback_validation_invalid_stellar_account() {
 
 #[tokio::test]
 async fn test_callback_validation_invalid_asset_code() {
+    let valid_stellar_account = format!("G{}", "A".repeat(55));
     let payload = json!({
         "id": "anchor-tx-123",
         "amount_in": "100.50",
-        "stellar_account": "GABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDEFGHIJKLMNOP",
+        "stellar_account": valid_stellar_account,
         "asset_code": "TOOLONGASSETCODE"
     });
 

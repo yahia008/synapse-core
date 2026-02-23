@@ -10,9 +10,12 @@ path = "src/lib.rs"
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 axum = { version = "0.6", features = ["ws"] }
+vaultrs = "0.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+base64 = "0.21"
 futures = "0.3"
+futures-util = "0.3"
 dotenvy = "0.15"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
@@ -34,20 +37,25 @@ home = "=0.5.11"
 reqwest = { version = "0.11", features = ["json"] }
 failsafe = "1"
 clap = { version = "4", features = ["derive"] }
-tower = "0.4"
-tower-http = { version = "0.5", features = ["cors"] }
+tower = { version = "0.4", features = ["util"] }
+tower-http = { version = "0.4", features = ["cors"] }
+arc-swap = "1"
+csv = "1"
+cron = "0.12"
+async-graphql = { version = "6", features = ["chrono", "uuid", "bigdecimal"] }
+async-graphql-axum = "6"
+tokio-stream = "0.1"
+async-stream = "0.3"
 governor = "0.6"
 redis = { version = "0.24", features = ["tokio-comp"] }
 ipnet = "2.9"
 utoipa = { version = "4", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "6", features = ["axum"] }
-tower-http = { version = "0.4", features = ["cors"] }
 url = "2.5"
-tower = { version = "0.4", features = ["util"] }
-tokio-stream = "0.1"
-futures-util = "0.3"
-async-graphql = { version = "6", features = ["chrono", "uuid", "bigdecimal"] }
-async-graphql-axum = "6"
+async-trait = "0.1"
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
 
 [dev-dependencies]
 mockito = "1"

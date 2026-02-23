@@ -16,7 +16,7 @@ use std::sync::Arc;
 use crate::db::models::Transaction;
 
 /// Query parameters for the export endpoint
-#[derive(Debug, Deserialize, Default, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ExportQuery {
     /// Export format: "csv" or "json"
     #[serde(default = "default_format")]
@@ -33,6 +33,18 @@ pub struct ExportQuery {
 
 fn default_format() -> String {
     "csv".to_string()
+}
+
+impl Default for ExportQuery {
+    fn default() -> Self {
+        Self {
+            format: default_format(),
+            from: None,
+            to: None,
+            status: None,
+            asset_code: None,
+        }
+    }
 }
 
 /// CSV row representation - uses String for amount to avoid Serialize issues with BigDecimal
@@ -190,7 +202,7 @@ fn create_csv_stream(pool: Arc<PgPool>, from: Option<String>, to: Option<String>
             
             let mut sql = format!(
                 "SELECT id, stellar_account, amount, asset_code, status, created_at, updated_at, 
-                        anchor_transaction_id, callback_type, callback_status 
+                        anchor_transaction_id, callback_type, callback_status, settlement_id
                  FROM transactions {}",
                 where_clause
             );
@@ -240,6 +252,7 @@ fn create_csv_stream(pool: Arc<PgPool>, from: Option<String>, to: Option<String>
                             anchor_transaction_id: row.get("anchor_transaction_id"),
                             callback_type: row.get("callback_type"),
                             callback_status: row.get("callback_status"),
+                            settlement_id: row.get("settlement_id"),
                         };
                         
                         last_id = Some(tx.id);
@@ -277,7 +290,7 @@ fn create_json_stream(pool: Arc<PgPool>, from: Option<String>, to: Option<String
             
             let mut sql = format!(
                 "SELECT id, stellar_account, amount, asset_code, status, created_at, updated_at, 
-                        anchor_transaction_id, callback_type, callback_status 
+                        anchor_transaction_id, callback_type, callback_status, settlement_id
                  FROM transactions {}",
                 where_clause
             );
@@ -326,6 +339,7 @@ fn create_json_stream(pool: Arc<PgPool>, from: Option<String>, to: Option<String
                             anchor_transaction_id: row.get("anchor_transaction_id"),
                             callback_type: row.get("callback_type"),
                             callback_status: row.get("callback_status"),
+                            settlement_id: row.get("settlement_id"),
                         };
                         
                         last_id = Some(tx.id);
@@ -465,7 +479,7 @@ mod tests {
     #[test]
     fn test_transaction_csv_row_from() {
         use uuid::Uuid;
-        use sqlx::types::BigDecimal;
+        use bigdecimal::BigDecimal;
         
         let tx = Transaction {
             id: Uuid::new_v4(),
@@ -478,6 +492,7 @@ mod tests {
             anchor_transaction_id: Some("anchor-123".to_string()),
             callback_type: Some("deposit".to_string()),
             callback_status: Some("completed".to_string()),
+            settlement_id: None,
         };
         
         let csv_row = TransactionCsvRow::from(&tx);
@@ -488,7 +503,7 @@ mod tests {
     #[test]
     fn test_transaction_json_row_from() {
         use uuid::Uuid;
-        use sqlx::types::BigDecimal;
+        use bigdecimal::BigDecimal;
         
         let tx = Transaction {
             id: Uuid::new_v4(),
@@ -501,6 +516,7 @@ mod tests {
             anchor_transaction_id: Some("anchor-123".to_string()),
             callback_type: Some("deposit".to_string()),
             callback_status: Some("completed".to_string()),
+            settlement_id: None,
         };
         
         let json_row = TransactionJsonRow::from(&tx);

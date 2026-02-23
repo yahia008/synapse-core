@@ -1,21 +1,3 @@
-<<<<<<< HEAD
-use axum::{
-    Router,
-    body::Body,
-    http::{Request, StatusCode},
-};
-use tower::ServiceExt;
-
-||||||| 2822865
-use axum::{
-    body::Body,
-    http::{Request, StatusCode},
-    Router,
-};
-use tower::ServiceExt;
-
-=======
->>>>>>> refs/remotes/origin/feature/issue-18-circuit-breaker
 #[cfg(test)]
 mod idempotency_tests {
     // Note: These tests require a running Redis instance

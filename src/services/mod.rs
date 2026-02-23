@@ -6,7 +6,6 @@ pub mod transaction_processor_job;
 pub mod feature_flags;
 pub mod backup;
 
-pub use processor::run_processor;
 pub use settlement::SettlementService;
 pub use transaction_processor::TransactionProcessor;
 pub use scheduler::{JobScheduler, Job, JobStatus};

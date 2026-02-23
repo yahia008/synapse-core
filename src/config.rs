@@ -1,8 +1,8 @@
 use anyhow::Result;
 use dotenvy::dotenv;
-use serde::Deserialize;
 use std::env;
 use ipnet::IpNet;
+use crate::secrets::SecretsManager;
 
 #[derive(Debug, Clone)]
 pub enum AllowedIps {
@@ -16,7 +16,7 @@ pub enum LogFormat {
     Json,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct Config {
     pub server_port: u16,
     pub database_url: String,
@@ -35,7 +35,7 @@ pub struct Config {
 
 pub mod assets;
 impl Config {
-    pub fn from_env() -> anyhow::Result<Self> {
+    pub async fn load() -> anyhow::Result<Self> {
         dotenv().ok(); // Load .env file if present
 
         let allowed_ips =
@@ -45,14 +45,34 @@ impl Config {
             &env::var("LOG_FORMAT").unwrap_or_else(|_| "text".to_string()),
         )?;
 
+        let use_vault = env::var("VAULT_ROLE_ID").is_ok() && env::var("VAULT_SECRET_ID").is_ok();
+
+        let (database_url, anchor_webhook_secret) = if use_vault {
+            let secrets = SecretsManager::new().await?;
+            let db_password = secrets.get_db_password().await?;
+            let anchor_secret = secrets.get_anchor_secret().await?;
+
+            let db_template = env::var("DATABASE_URL_TEMPLATE").ok();
+            let db_url = db_template
+                .map(|template| template.replace("{password}", &db_password))
+                .unwrap_or_else(|| env::var("DATABASE_URL").unwrap_or_default());
+
+            (db_url, anchor_secret)
+        } else {
+            (
+                env::var("DATABASE_URL")?,
+                env::var("ANCHOR_WEBHOOK_SECRET")?,
+            )
+        };
+
         Ok(Config {
             server_port: env::var("SERVER_PORT")
                 .unwrap_or_else(|_| "3000".to_string())
                 .parse()?,
-            database_url: env::var("DATABASE_URL")?,
+            database_url,
             database_replica_url: env::var("DATABASE_REPLICA_URL").ok(),
             stellar_horizon_url: env::var("STELLAR_HORIZON_URL")?,
-            anchor_webhook_secret: env::var("ANCHOR_WEBHOOK_SECRET")?,
+            anchor_webhook_secret: anchor_webhook_secret,
             redis_url: env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string()),
             default_rate_limit: env::var("DEFAULT_RATE_LIMIT")
                 .unwrap_or_else(|_| "100".to_string())

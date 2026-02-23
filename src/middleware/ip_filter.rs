@@ -5,6 +5,7 @@ use std::task::{Context, Poll};
 use axum::extract::connect_info::ConnectInfo;
 use axum::http::{HeaderMap, Request, StatusCode};
 use axum::response::{IntoResponse, Response};
+use futures_util::future::BoxFuture;
 use tower::{Layer, Service};
 
 use crate::config::AllowedIps;
@@ -51,7 +52,7 @@ where
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = futures_util::future::BoxFuture<'static, Result<Self::Response, Self::Error>>;
+    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
@@ -135,11 +136,12 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use axum::http::{HeaderValue, Request};
+    use tower::Layer as TowerLayer;
     use ipnet::IpNet;
     use tower::ServiceExt;
     use tower::service_fn;
     use tracing::Subscriber;
-    use tracing_subscriber::layer::{Context as LayerContext, Layer};
+    use tracing_subscriber::layer::{Context as LayerContext, Layer as TracingLayer};
     use tracing_subscriber::prelude::*;
     use tracing_subscriber::registry::Registry;
 
@@ -307,7 +309,7 @@ mod tests {
         events: Arc<Mutex<Vec<String>>>,
     }
 
-    impl<S> Layer<S> for CaptureWarnLayer
+    impl<S> TracingLayer<S> for CaptureWarnLayer
     where
         S: Subscriber,
     {

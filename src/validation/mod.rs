@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use sqlx::types::BigDecimal;
+use bigdecimal::BigDecimal;
 use std::fmt;
 
 pub const STELLAR_ACCOUNT_LEN: usize = 56;
@@ -45,7 +45,17 @@ pub type ValidationResult = Result<(), ValidationError>;
 pub fn sanitize_string(value: &str) -> String {
     value
         .chars()
-        .filter(|ch| !ch.is_control())
+        .filter_map(|ch| {
+            if ch.is_control() {
+                if ch.is_whitespace() {
+                    Some(' ')
+                } else {
+                    None
+                }
+            } else {
+                Some(ch)
+            }
+        })
         .collect::<String>()
         .split_whitespace()
         .collect::<Vec<_>>()

@@ -65,6 +65,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore]
     async fn test_partition_manager_creation() {
         let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
             "postgres://synapse:synapse@localhost:5432/synapse_test".to_string()

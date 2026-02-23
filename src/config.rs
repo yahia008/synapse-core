@@ -29,8 +29,8 @@ pub struct Config {
     pub whitelisted_ips: String,
     pub log_format: LogFormat,
     pub allowed_ips: AllowedIps,
-    /// Drain timeout in seconds for connection draining (default: 30s)
-    pub drain_timeout_secs: u64,
+    pub backup_dir: String,
+    pub backup_encryption_key: Option<String>,
 }
 
 pub mod assets;
@@ -63,10 +63,8 @@ impl Config {
             whitelisted_ips: env::var("WHITELISTED_IPS").unwrap_or_default(),
             log_format,
             allowed_ips,
-            drain_timeout_secs: env::var("DRAIN_TIMEOUT_SECS")
-                .unwrap_or_else(|_| "30".to_string())
-                .parse()
-                .unwrap_or(30),
+            backup_dir: env::var("BACKUP_DIR").unwrap_or_else(|_| "./backups".to_string()),
+            backup_encryption_key: env::var("BACKUP_ENCRYPTION_KEY").ok(),
         })
     }
 }
@@ -97,4 +95,10 @@ fn parse_log_format(raw: &str) -> anyhow::Result<LogFormat> {
         "json" => Ok(LogFormat::Json),
         _ => anyhow::bail!("LOG_FORMAT must be 'text' or 'json'"),
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum AllowedIps {
+    Any,
+    Cidrs(Vec<ipnet::IpNet>),
 }

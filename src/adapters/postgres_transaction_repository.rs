@@ -84,7 +84,7 @@ impl TransactionRepository for PostgresTransactionRepository {
 struct TransactionRow {
     id: Uuid,
     stellar_account: String,
-    amount: sqlx::types::BigDecimal,
+    amount: bigdecimal::BigDecimal,
     asset_code: String,
     status: String,
     created_at: chrono::DateTime<chrono::Utc>,

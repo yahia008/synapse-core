@@ -1,4 +1,4 @@
-use chrono::{Datelike, NaiveDate, Utc};
+use chrono::{Datelike, NaiveDate, TimeZone, Utc};
 use sqlx::postgres::PgPool;
 use sqlx::Row;
 

@@ -1,4 +1,5 @@
 pub mod export;
+pub mod graphql;
 pub mod settlements;
 pub mod webhook;
 pub mod dlq;

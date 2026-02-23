@@ -8,7 +8,7 @@ use tokio::time::sleep;
 use crate::db::models::Asset;
 
 pub struct AssetCache {
-    inner: ArcSwap<Arc<HashMap<String, Asset>>>,
+    inner: ArcSwap<HashMap<String, Asset>>,
 }
 
 impl AssetCache {
@@ -19,7 +19,7 @@ impl AssetCache {
         let arc_map = Arc::new(map);
 
         let cache = Arc::new(AssetCache {
-            inner: ArcSwap::from_pointee(arc_map.clone()),
+            inner: ArcSwap::from(arc_map.clone()),
         });
 
         // spawn background refresher

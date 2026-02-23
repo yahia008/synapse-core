@@ -1,12 +1,13 @@
 use axum::{
+    extract::Request,
     extract::State,
-    http::{Request, StatusCode},
+    http::StatusCode,
     middleware::Next,
     response::Response,
 };
 use sqlx::PgPool;
-use std::sync::Arc;
 
+#[derive(Clone)]
 pub struct MetricsHandle;
 
 #[derive(Clone)]
@@ -26,10 +27,10 @@ pub async fn metrics_handler(
     Ok("# Metrics placeholder\n".to_string())
 }
 
-pub async fn metrics_auth_middleware<B>(
+pub async fn metrics_auth_middleware(
     State(_config): State<crate::config::Config>,
-    request: Request<B>,
-    next: Next<B>,
+    request: Request,
+    next: Next,
 ) -> Result<Response, StatusCode> {
     // Simple auth check - in production, implement proper authentication
     Ok(next.run(request).await)

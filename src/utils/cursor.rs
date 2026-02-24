@@ -1,6 +1,6 @@
+use base64::{engine::general_purpose, Engine as _};
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
-use base64::{Engine as _, engine::general_purpose};
 
 /// Cursor helpers: encode/decode a (created_at, id) tuple into a base64 string.
 /// Format used internally: "{created_at_rfc3339}|{uuid}" then base64 encoded.
@@ -10,7 +10,9 @@ pub fn encode(created_at: DateTime<Utc>, id: Uuid) -> String {
 }
 
 pub fn decode(cursor: &str) -> Result<(DateTime<Utc>, Uuid), String> {
-    let decoded = general_purpose::STANDARD.decode(cursor).map_err(|e| format!("base64 decode error: {}", e))?;
+    let decoded = general_purpose::STANDARD
+        .decode(cursor)
+        .map_err(|e| format!("base64 decode error: {}", e))?;
     let s = String::from_utf8(decoded).map_err(|e| format!("utf8 error: {}", e))?;
     let mut parts = s.splitn(2, '|');
     let ts_str = parts

@@ -238,7 +238,8 @@ async fn serve(config: config::Config) -> anyhow::Result<()> {
         ))
         .with_state(api_state.clone());
 
-    let _dlq_routes: Router = handlers::dlq::dlq_routes().with_state(api_state.app_state.db.clone());
+    let _dlq_routes: Router =
+        handlers::dlq::dlq_routes().with_state(api_state.app_state.db.clone());
 
     let _admin_routes: Router = Router::new()
         .nest("/admin/queue", handlers::admin::admin_routes())

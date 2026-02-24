@@ -70,10 +70,7 @@ pub async fn detach_and_archive_old_partitions(
         let child: String = row.get("child");
         // expect names like transactions_y2025m02
         if let Some((y, m)) = parse_partition_name(&child) {
-            let part_date = Utc
-                .with_ymd_and_hms(y, m, 1, 0, 0, 0)
-                .single()
-                .unwrap();
+            let part_date = Utc.with_ymd_and_hms(y, m, 1, 0, 0, 0).single().unwrap();
             if part_date < cutoff {
                 // detach
                 let detach_sql = format!("ALTER TABLE transactions DETACH PARTITION \"{}\"", child);

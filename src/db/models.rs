@@ -5,7 +5,8 @@ use sqlx::types::BigDecimal;
 use uuid::Uuid;
 use utoipa::ToSchema;
 
-#[derive(Debug, FromRow, Serialize, Deserialize)]
+#[derive(Debug, FromRow, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
 pub struct Transaction {
     pub id: Uuid,
     pub stellar_account: String,
@@ -21,6 +22,23 @@ pub struct Transaction {
     pub memo: Option<String>,
     pub memo_type: Option<String>,
     pub metadata: Option<serde_json::Value>,
+}
+
+#[async_graphql::Object]
+impl Transaction {
+    async fn id(&self) -> String { self.id.to_string() }
+    async fn stellar_account(&self) -> &str { &self.stellar_account }
+    async fn amount(&self) -> String { self.amount.to_string() }
+    async fn asset_code(&self) -> &str { &self.asset_code }
+    async fn status(&self) -> &str { &self.status }
+    async fn created_at(&self) -> DateTime<Utc> { self.created_at }
+    async fn updated_at(&self) -> DateTime<Utc> { self.updated_at }
+    async fn anchor_transaction_id(&self) -> Option<&str> { self.anchor_transaction_id.as_deref() }
+    async fn callback_type(&self) -> Option<&str> { self.callback_type.as_deref() }
+    async fn callback_status(&self) -> Option<&str> { self.callback_status.as_deref() }
+    async fn settlement_id(&self) -> Option<String> { self.settlement_id.map(|id| id.to_string()) }
+    async fn memo(&self) -> Option<&str> { self.memo.as_deref() }
+    async fn memo_type(&self) -> Option<&str> { self.memo_type.as_deref() }
 }
 
 impl Transaction {
@@ -54,11 +72,10 @@ impl Transaction {
     }
 }
 
-#[derive(Debug, FromRow, Serialize, Deserialize)]
+#[derive(Debug, FromRow, Serialize, Deserialize, Clone)]
 pub struct Settlement {
     pub id: Uuid,
     pub asset_code: String,
-    #[serde(with = "bigdecimal_serde")]
     pub total_amount: BigDecimal,
     pub tx_count: i32,
     pub period_start: DateTime<Utc>,
@@ -68,12 +85,24 @@ pub struct Settlement {
     pub updated_at: DateTime<Utc>,
 }
 
+#[async_graphql::Object]
+impl Settlement {
+    async fn id(&self) -> String { self.id.to_string() }
+    async fn asset_code(&self) -> &str { &self.asset_code }
+    async fn total_amount(&self) -> String { self.total_amount.to_string() }
+    async fn tx_count(&self) -> i32 { self.tx_count }
+    async fn period_start(&self) -> DateTime<Utc> { self.period_start }
+    async fn period_end(&self) -> DateTime<Utc> { self.period_end }
+    async fn status(&self) -> &str { &self.status }
+    async fn created_at(&self) -> DateTime<Utc> { self.created_at }
+    async fn updated_at(&self) -> DateTime<Utc> { self.updated_at }
+}
+
 #[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct TransactionDlq {
     pub id: Uuid,
     pub transaction_id: Uuid,
     pub stellar_account: String,
-    #[serde(with = "bigdecimal_serde")]
     pub amount: BigDecimal,
     pub asset_code: String,
     pub anchor_transaction_id: Option<String>,
@@ -243,5 +272,19 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(transactions.len(), 5);
+    }
+}
+
+// Minimal Asset struct for asset cache functionality
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Asset {
+    pub asset_code: String,
+    pub issuer: Option<String>,
+}
+
+impl Asset {
+    pub async fn fetch_all(pool: &sqlx::PgPool) -> Result<Vec<Self>, sqlx::Error> {
+        // Placeholder implementation - returns empty vec for now
+        Ok(vec![])
     }
 }

@@ -1,7 +1,14 @@
 use tokio::sync::broadcast;
+use tokio::time::{sleep, Duration};
 use uuid::Uuid;
+use sqlx::PgPool;
+use tracing::{info, error, debug};
 
 use crate::handlers::ws::TransactionStatusUpdate;
+use crate::stellar::HorizonClient;
+use crate::db::models::Transaction;
+
+const POLL_INTERVAL_SECS: u64 = 5;
 
 /// Runs the background processor loop. Processes pending transactions asynchronously
 /// without blocking the HTTP server. Uses `SELECT ... FOR UPDATE SKIP LOCKED`
@@ -18,7 +25,7 @@ pub async fn run_processor(pool: PgPool, horizon_client: HorizonClient) {
     }
 }
 
-async fn process_batch(pool: &PgPool, horizon_client: &HorizonClient) -> anyhow::Result<()> {
+pub async fn process_batch(pool: &PgPool, horizon_client: &HorizonClient) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
 
     // Fetch pending transactions with row locking. SKIP LOCKED ensures we don't
@@ -39,14 +46,18 @@ async fn process_batch(pool: &PgPool, horizon_client: &HorizonClient) -> anyhow:
     .await?;
 
     if pending.is_empty() {
+        tx.commit().await?;
         return Ok(());
     }
 
     debug!("Processing {} pending transaction(s)", pending.len());
 
-    // Send returns the number of receivers, we don't care if there are none
-    match tx.send(update.clone()) {
-        Ok(n) => tracing::debug!("Broadcast status update to {} clients", n),
-        Err(_) => tracing::trace!("No active WebSocket clients"),
+    // Process transactions here
+    for _transaction in pending {
+        // TODO: Implement transaction processing logic
     }
+
+    tx.commit().await?;
+    Ok(())
 }
+

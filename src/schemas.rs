@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use utoipa::ToSchema;
 
 /// Transaction schema for OpenAPI documentation
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

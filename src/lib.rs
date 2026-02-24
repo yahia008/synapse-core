@@ -13,13 +13,16 @@ pub mod health;
 pub mod metrics;
 pub mod validation;
 pub mod readiness;
+pub mod secrets;
 
 use axum::{Router, routing::{get, post}};
 use crate::stellar::HorizonClient;
 use crate::services::feature_flags::FeatureFlagService;
 use crate::db::pool_manager::PoolManager;
 pub use crate::readiness::ReadinessState;
-// use crate::graphql::schema::{AppSchema, build_schema};  // Temporarily commented out to resolve compilation issues
+use tokio::sync::broadcast;
+use crate::handlers::ws::TransactionStatusUpdate;
+use crate::graphql::schema::AppSchema;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -30,17 +33,20 @@ pub struct AppState {
     pub redis_url: String,
     pub start_time: std::time::Instant,
     pub readiness: ReadinessState,
+    pub tx_broadcast: broadcast::Sender<TransactionStatusUpdate>,
 }
 
 #[derive(Clone)]
 pub struct ApiState {
     pub app_state: AppState,
-    // pub graphql_schema: AppSchema,  // Temporarily commented out to resolve compilation issues
+    pub graphql_schema: AppSchema,
 }
 
 pub fn create_app(app_state: AppState) -> Router {
+    let graphql_schema = crate::graphql::schema::build_schema(app_state.clone());
     let api_state = ApiState {
         app_state,
+        graphql_schema,
     };
     
     Router::new()
@@ -52,7 +58,6 @@ pub fn create_app(app_state: AppState) -> Router {
         .route("/callback", post(handlers::webhook::callback))
         .route("/callback/transaction", post(handlers::webhook::callback)) // Backward compatibility
         .route("/transactions/:id", get(handlers::webhook::get_transaction))
-        // .route("/graphql", post(handlers::graphql::graphql_handler).get(handlers::graphql::subscription_handler))
-        // .route("/graphql/playground", get(handlers::graphql::graphql_playground))
+        .route("/graphql", post(handlers::graphql::graphql_handler))
         .with_state(api_state)
 }

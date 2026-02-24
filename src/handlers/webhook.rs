@@ -1,4 +1,4 @@
-use crate::ApiState;
+use crate::{ApiState, AppState};
 use crate::db::{models::Transaction, queries};
 use crate::error::AppError;
 use crate::validation::{
@@ -6,14 +6,14 @@ use crate::validation::{
     CALLBACK_TYPE_MAX_LEN, sanitize_string, validate_asset_code, validate_max_len,
     validate_positive_amount, validate_stellar_address,
 };
-use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
+use crate::utils::cursor as cursor_util;
+use axum::{Json, extract::{State, Path, Query}, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use crate::db::queries;
-use crate::db::models::Transaction;
-use crate::error::AppError;
 use utoipa::ToSchema;
 use std::str::FromStr;
+use sqlx::types::BigDecimal;
+use crate::db::models::Transaction as TxModel;
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 pub struct CallbackPayload {
@@ -30,7 +30,8 @@ pub struct CallbackPayload {
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 pub struct WebhookPayload {
-use sqlx::types::BigDecimal;
+    pub id: String,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -125,6 +126,9 @@ pub async fn transaction_callback(
         payload.anchor_transaction_id,
         payload.callback_type,
         payload.callback_status,
+        None, // memo
+        None, // memo_type
+        None, // metadata
     );
 
     let inserted = queries::insert_transaction(&state.db, &tx).await?;
@@ -267,6 +271,8 @@ mod tests {
         payload.callback_status = Some("a".repeat(21));
         assert!(validate_webhook_payload(payload).is_err());
     }
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct WebhookResponse {
     pub success: bool,
@@ -348,11 +354,6 @@ pub async fn handle_webhook(
     };
 
     (StatusCode::OK, Json(response))
-}
-
-/// Callback endpoint for transactions (placeholder)
-pub async fn callback(State(_state): State<ApiState>) -> impl IntoResponse {
-    StatusCode::NOT_IMPLEMENTED
 }
 
 /// Get a specific transaction

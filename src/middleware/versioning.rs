@@ -1,14 +1,14 @@
 use axum::{
     http::{HeaderValue, Response, header, HeaderName},
     middleware::Next,
-    response::IntoResponse,
+    response::{IntoResponse, Response as AxumResponse},
 };
 use std::str::FromStr;
 
 pub async fn inject_deprecation_headers<B>(
     req: axum::http::Request<B>,
     next: Next<B>,
-) -> Response {
+) -> AxumResponse {
     let mut response = next.run(req).await;
     
     // Set Deprecation header to true

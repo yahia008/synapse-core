@@ -213,6 +213,7 @@ pub struct ErrorResponse {
 
 /// Catalog response structure
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(bound(deserialize = "'de: 'static"))]
 pub struct ErrorCatalogResponse {
     pub errors: Vec<ErrorCode>,
     pub version: String,

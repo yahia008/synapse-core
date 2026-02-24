@@ -1,44 +1,30 @@
 use synapse_core::{
-    config, db, handlers, middleware, schemas, startup,
-    AppState, ApiState,
+    config, db, handlers, middleware, schemas, startup, metrics, health,
+    AppState, ApiState, ReadinessState,
     graphql::schema::build_schema,
     stellar::HorizonClient,
     middleware::idempotency::IdempotencyService,
+    handlers::ws::TransactionStatusUpdate,
+    services::{FeatureFlagService, SettlementService},
+    db::pool_manager::PoolManager,
 };
-use axum::{Router, routing::{get, post}, middleware as axum_middleware};
-use axum::http::header::HeaderValue;
-use sqlx::migrate::Migrator;
-mod cli;
-mod config;
-mod db;
-mod error;
-mod handlers;
-mod health;
-mod metrics;
-mod middleware;
-mod services;
-mod stellar;
-mod validation;
-mod readiness;
-
 use axum::{
     Router, 
-    routing::get,
+    routing::{get, post},
     middleware as axum_middleware,
-    middleware::Next,
-    extract::Request,
-    response::Response,
-    http::HeaderMap,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode, header::HeaderValue},
     response::IntoResponse,
     extract::ConnectInfo,
 };
 use sqlx::migrate::Migrator;
 use tower_http::cors::{CorsLayer, AllowOrigin};
-use std::net::SocketAddr;
-use std::path::Path;
+use std::{net::SocketAddr, path::Path, sync::Arc};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
+use tokio::sync::broadcast;
+use clap::Parser;
+mod cli;
+use cli::{Cli, Commands, DbCommands, TxCommands, BackupCommands};
 
 /// OpenAPI Schema for the Synapse Core API
 #[derive(OpenApi)]
@@ -82,7 +68,7 @@ pub struct ApiDoc;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let config = config::Config::from_env()?;
+    let config = config::Config::load().await?;
 
     // Setup logging
     let env_filter =
@@ -188,12 +174,12 @@ async fn serve(config: config::Config) -> anyhow::Result<()> {
     tracing::info!("Metrics initialized successfully");
 
     // Initialize rate limiting
-    let rate_limit_config = Arc::new(RateLimitConfig::new(&config));
+    // let rate_limit_config = Arc::new(RateLimitConfig::new(&config));
     
     // Load whitelisted IPs from config
-    if !config.whitelisted_ips.is_empty() {
-        rate_limit_config.load_whitelisted_ips(&config.whitelisted_ips).await;
-    }
+    // if !config.whitelisted_ips.is_empty() {
+    //     rate_limit_config.load_whitelisted_ips(&config.whitelisted_ips).await;
+    // }
     
     tracing::info!("Rate limiting configured: {} req/sec (default), {} req/sec (whitelisted)", 
                    config.default_rate_limit, config.whitelist_rate_limit);
@@ -216,6 +202,11 @@ async fn serve(config: config::Config) -> anyhow::Result<()> {
         db: pool.clone(),
         pool_manager,
         horizon_client,
+        feature_flags,
+        redis_url: config.redis_url.clone(),
+        start_time: std::time::Instant::now(),
+        readiness: ReadinessState::new(),
+        tx_broadcast,
     };
 
     let graphql_schema = build_schema(app_state.clone());
@@ -228,44 +219,41 @@ async fn serve(config: config::Config) -> anyhow::Result<()> {
         pool_monitor_task(monitor_pool).await;
     });
 
-    let api_routes = Router::new()
+    let api_routes: Router = Router::new()
         .route("/health", get(handlers::health))
         .route("/settlements", get(handlers::settlements::list_settlements))
         .route("/settlements/:id", get(handlers::settlements::get_settlement))
         .route("/callback", post(handlers::webhook::callback))
         .route("/transactions/:id", get(handlers::webhook::get_transaction))
-        .route("/graphql", post(handlers::graphql::graphql_handler)
-            .get(handlers::graphql::subscription_handler))
-        .route("/graphql/playground", get(handlers::graphql::graphql_playground))
+        .route("/graphql", post(handlers::graphql::graphql_handler))
         .with_state(api_state.clone());
 
-    let webhook_routes = Router::new()
+    let webhook_routes: Router = Router::new()
         .route("/webhook", post(handlers::webhook::handle_webhook))
         .layer(axum_middleware::from_fn_with_state(
             config.clone(),
-            metrics::metrics_auth_middleware,
+            metrics::metrics_auth_middleware::<axum::body::Body>,
         ))
         .with_state(api_state.clone());
 
-    let dlq_routes = handlers::dlq::dlq_routes()
+    let dlq_routes: Router = handlers::dlq::dlq_routes()
         .with_state(api_state.app_state.db.clone());
 
-    let admin_routes = Router::new()
+    let admin_routes: Router = Router::new()
         .nest("/admin/queue", handlers::admin::admin_routes())
         .layer(axum_middleware::from_fn(middleware::auth::admin_auth))
         .with_state(api_state.app_state.db.clone());
 
-    // Create search route with pool_manager state
-    let search_routes = Router::new()
+    let search_routes: Router = Router::new()
         .route("/transactions/search", get(handlers::search::search_transactions))
-        .with_state(app_state.pool_manager.clone());
+        .with_state(api_state.app_state.pool_manager.clone());
     
     let app = Router::new()
         // Unversioned routes - default to latest (V2) or specific base routes
         .route("/health", get(handlers::health))
         .route("/settlements", get(handlers::settlements::list_settlements))
         .route("/settlements/:id", get(handlers::settlements::get_settlement))
-        .with_state(app_state);
+        .with_state(api_state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.server_port));
     tracing::info!("listening on {}", addr);

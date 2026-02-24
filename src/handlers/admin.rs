@@ -1,6 +1,8 @@
 use crate::AppState;
 use axum::{
     Json,
+    Router,
+    routing::get,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
@@ -10,6 +12,11 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateFlagRequest {
     pub enabled: bool,
+}
+
+pub fn admin_routes() -> Router<sqlx::PgPool> {
+    Router::new()
+        .route("/flags", get(|| async { StatusCode::NOT_IMPLEMENTED }))
 }
 
 pub async fn get_flags(State(state): State<AppState>) -> impl IntoResponse {

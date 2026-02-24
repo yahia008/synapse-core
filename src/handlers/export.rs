@@ -253,6 +253,9 @@ fn create_csv_stream(pool: Arc<PgPool>, from: Option<String>, to: Option<String>
                             callback_type: row.get("callback_type"),
                             callback_status: row.get("callback_status"),
                             settlement_id: row.get("settlement_id"),
+                            memo: row.get("memo"),
+                            memo_type: row.get("memo_type"),
+                            metadata: row.get("metadata"),
                         };
                         
                         last_id = Some(tx.id);
@@ -340,6 +343,9 @@ fn create_json_stream(pool: Arc<PgPool>, from: Option<String>, to: Option<String
                             callback_type: row.get("callback_type"),
                             callback_status: row.get("callback_status"),
                             settlement_id: row.get("settlement_id"),
+                            memo: row.get("memo"),
+                            memo_type: row.get("memo_type"),
+                            metadata: row.get("metadata"),
                         };
                         
                         last_id = Some(tx.id);

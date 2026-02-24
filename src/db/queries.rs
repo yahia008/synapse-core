@@ -9,6 +9,8 @@ use sqlx::types::BigDecimal;
 // --- Transaction Queries ---
 
 pub async fn insert_transaction(pool: &PgPool, tx: &Transaction) -> Result<Transaction> {
+    let mut db_tx = pool.begin().await?;
+    
     let result = sqlx::query_as::<_, Transaction>(
         r#"
         INSERT INTO transactions (
@@ -33,12 +35,12 @@ pub async fn insert_transaction(pool: &PgPool, tx: &Transaction) -> Result<Trans
     .bind(&tx.memo)
     .bind(&tx.memo_type)
     .bind(&tx.metadata)
-    .fetch_one(&mut *transaction)
+    .fetch_one(&mut *db_tx)
     .await?;
 
     // Audit log: transaction created
     AuditLog::log_creation(
-        &mut transaction,
+        &mut db_tx,
         result.id,
         ENTITY_TRANSACTION,
         json!({
@@ -57,6 +59,7 @@ pub async fn insert_transaction(pool: &PgPool, tx: &Transaction) -> Result<Trans
     )
     .await?;
 
+    db_tx.commit().await?;
     Ok(result)
 }
 

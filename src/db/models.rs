@@ -177,6 +177,13 @@ mod tests {
             .run(&pool)
             .await
             .expect("Failed to run migrations on test DB");
+        
+        // Create partition for current month
+        sqlx::query("SELECT create_monthly_partition()")
+            .execute(&pool)
+            .await
+            .expect("Failed to create partition");
+        
         pool
     }
 
@@ -246,9 +253,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_transaction() {
-        let pool = PgPool::connect("postgres://user:password@localhost/test_db")
-            .await
-            .unwrap();
+        let pool = setup_test_db().await;
         let tx = Transaction::new(
             "GABCDEF".to_string(),
             BigDecimal::from(100),
@@ -268,9 +273,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_transaction() {
-        let pool = PgPool::connect("postgres://user:password@localhost/test_db")
-            .await
-            .unwrap();
+        let pool = setup_test_db().await;
         let tx = Transaction::new(
             "GABCDEF".to_string(),
             BigDecimal::from(100),
@@ -293,9 +296,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_transactions() {
-        let pool = PgPool::connect("postgres://user:password@localhost/test_db")
-            .await
-            .unwrap();
+        let pool = setup_test_db().await;
         for i in 0..5 {
             let tx = Transaction::new(
                 format!("GABCDEF_{}", i),

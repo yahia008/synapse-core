@@ -1,4 +1,3 @@
-use crate::AppState;
 use axum::{
     extract::{Query, State},
     http::{header, header::HeaderValue, HeaderMap, StatusCode},
@@ -143,11 +142,13 @@ fn build_filter_conditions(
 ) -> (String, Vec<FilterValue>) {
     let mut conditions = Vec::new();
     let mut params = Vec::new();
+    let mut param_count = 1;
 
     if let Some(ref from_date) = from {
         if let Ok(parsed) = parse_date(from_date) {
-            conditions.push("created_at >= $".to_string());
+            conditions.push(format!("created_at >= ${}", param_count));
             params.push(FilterValue::DateTime(parsed));
+            param_count += 1;
         }
     }
 
@@ -155,18 +156,20 @@ fn build_filter_conditions(
         if let Ok(parsed) = parse_date(to_date) {
             // Add one day to include the entire end date
             let end_of_day = parsed + chrono::Duration::days(1);
-            conditions.push("created_at < $".to_string());
+            conditions.push(format!("created_at < ${}", param_count));
             params.push(FilterValue::DateTime(end_of_day));
+            param_count += 1;
         }
     }
 
     if let Some(ref status_val) = status {
-        conditions.push("status = $".to_string());
+        conditions.push(format!("status = ${}", param_count));
         params.push(FilterValue::String(status_val.clone()));
+        param_count += 1;
     }
 
     if let Some(ref asset) = asset_code {
-        conditions.push("asset_code = $".to_string());
+        conditions.push(format!("asset_code = ${}", param_count));
         params.push(FilterValue::String(asset.clone()));
     }
 
@@ -208,7 +211,8 @@ fn create_csv_stream(
 
             let mut sql = format!(
                 "SELECT id, stellar_account, amount, asset_code, status, created_at, updated_at,
-                        anchor_transaction_id, callback_type, callback_status, settlement_id
+                        anchor_transaction_id, callback_type, callback_status, settlement_id,
+                        memo, memo_type, metadata
                  FROM transactions {}",
                 where_clause
             );
@@ -305,7 +309,8 @@ fn create_json_stream(
 
             let mut sql = format!(
                 "SELECT id, stellar_account, amount, asset_code, status, created_at, updated_at,
-                        anchor_transaction_id, callback_type, callback_status, settlement_id
+                        anchor_transaction_id, callback_type, callback_status, settlement_id,
+                        memo, memo_type, metadata
                  FROM transactions {}",
                 where_clause
             );
@@ -416,10 +421,10 @@ where
 
 /// Export transactions as CSV with true streaming
 pub async fn export_transactions_csv(
-    State(state): State<AppState>,
+    State(state): State<crate::ApiState>,
     Query(query): Query<ExportQuery>,
 ) -> impl IntoResponse {
-    let pool = Arc::new(state.db);
+    let pool = Arc::new(state.app_state.db);
     let from = query.from.clone();
     let to = query.to.clone();
     let status = query.status.clone();
@@ -435,10 +440,10 @@ pub async fn export_transactions_csv(
 
 /// Export transactions as JSON with true streaming (JSON Lines format)
 pub async fn export_transactions_json(
-    State(state): State<AppState>,
+    State(state): State<crate::ApiState>,
     Query(query): Query<ExportQuery>,
 ) -> impl IntoResponse {
-    let pool = Arc::new(state.db);
+    let pool = Arc::new(state.app_state.db);
     let from = query.from.clone();
     let to = query.to.clone();
     let status = query.status.clone();
@@ -454,10 +459,10 @@ pub async fn export_transactions_json(
 
 /// Main export handler that routes to CSV or JSON based on format parameter
 pub async fn export_transactions(
-    State(state): State<AppState>,
+    State(state): State<crate::ApiState>,
     Query(query): Query<ExportQuery>,
 ) -> impl IntoResponse {
-    let pool = Arc::new(state.db);
+    let pool = Arc::new(state.app_state.db);
     let from = query.from.clone();
     let to = query.to.clone();
     let status = query.status.clone();

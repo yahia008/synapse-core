@@ -117,6 +117,11 @@ async fn test_graphql_queries() {
     assert_eq!(res.status(), StatusCode::OK);
     let body: serde_json::Value = res.json().await.unwrap();
     assert_eq!(body["data"]["transaction"]["id"], tx_id);
-    assert_eq!(body["data"]["transaction"]["amount"], "100.50");
+    
+    // BigDecimal may have trailing zeros, so parse and compare numerically
+    let amount_str = body["data"]["transaction"]["amount"].as_str().unwrap();
+    let amount: f64 = amount_str.parse().unwrap();
+    assert_eq!(amount, 100.50);
+    
     assert_eq!(body["data"]["transaction"]["assetCode"], "USD");
 }
